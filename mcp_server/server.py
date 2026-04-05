@@ -5,15 +5,17 @@ Architecture
 ------------
 FastMCP instance (app.py)
     ↑ tools register via @mcp.tool() (imported below for side-effects)
-    ↓ mcp.sse_app() → Starlette SSE app
+    ↓ mcp.sse_app()              → legacy SSE transport
+    ↓ mcp.streamable_http_app() → modern Streamable HTTP transport (Postman/Claude)
         ↓ wrapped with MCPAPIKeyMiddleware + /health route
             ↓ exported as `app` for uvicorn
 
-Endpoints (port 8001)
----------------------
-GET  /health        — liveness check (no auth required)
-GET  /sse           — SSE stream; AI agents open a persistent connection here
-POST /messages/     — MCP message endpoint; agents post tool calls here
+Endpoints (when mounted at /mcp in api.py)
+------------------------------------------
+GET  /mcp/health        — liveness check (no auth required)
+GET  /mcp/sse           — SSE stream (legacy clients)
+POST /mcp/messages/     — SSE message endpoint
+POST /mcp/http          — Streamable HTTP (Postman, Claude Desktop remote)
 
 Tools registered
 ----------------
@@ -66,11 +68,13 @@ async def health(request: Request) -> JSONResponse:
 
 def create_app(root_path: str = "") -> Starlette:
     sse_starlette = mcp.sse_app()
+    http_starlette = mcp.streamable_http_app()
 
     return Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
-            Mount("/", app=sse_starlette),
+            Mount("/http", app=http_starlette),   # Postman HTTP / modern clients
+            Mount("/", app=sse_starlette),         # legacy SSE clients
         ],
         middleware=[
             Middleware(MCPAPIKeyMiddleware),
