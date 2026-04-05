@@ -54,3 +54,12 @@ api.include_router(health.router)
 api.include_router(redaction.router)
 api.include_router(summarization.router)
 api.include_router(patterns.router)
+
+# ── MCP SSE server — mounted at /mcp ──────────────────────────────────────────
+# Endpoints:  GET /mcp/sse   (SSE stream)
+#             POST /mcp/messages/  (tool calls)
+#             GET /mcp/health
+
+from mcp_server.server import app as _mcp_app  # noqa: E402
+
+api.mount("/mcp", _mcp_app)
