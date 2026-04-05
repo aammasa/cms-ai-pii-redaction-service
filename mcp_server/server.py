@@ -68,13 +68,11 @@ async def health(request: Request) -> JSONResponse:
 
 def create_app(root_path: str = "") -> Starlette:
     sse_starlette = mcp.sse_app()
-    http_starlette = mcp.streamable_http_app()
 
     return Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
-            Mount("/http", app=http_starlette),   # Postman HTTP / modern clients
-            Mount("/", app=sse_starlette),         # legacy SSE clients
+            Mount("/", app=sse_starlette),
         ],
         middleware=[
             Middleware(MCPAPIKeyMiddleware),
