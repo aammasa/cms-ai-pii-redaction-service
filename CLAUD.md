@@ -9,183 +9,207 @@ This file provides guidance to the AI Agent when working with code in this repos
 
 ```bash
 # Install dependencies
+python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+python -m spacy download en_core_web_lg
 
-# Run the API
-uvicorn src.api:api --host 0.0.0.0 --port 8000
+# Run the REST API (port 8000)
+uvicorn src.api:api --host 0.0.0.0 --port 8000 --reload
 
-# Run unit tests (mocked, no Azure resources needed)
+# Run the MCP server (port 8001)
+uvicorn mcp_main:app --host 0.0.0.0 --port 8001 --reload
+
+# Run unit tests (no external services needed)
 pytest tests/unit/ -v
-
-# Run a specific test
-pytest tests/unit/test_guardrails_unit.py -v -k test_shield_prompt_success
 
 # Run with coverage
 pytest tests/unit/ --cov=src --cov-report=html
 
-# Run integration tests (requires Azure resources and .env variables)
+# Run integration tests
 pytest tests/integration/ -v
 
-# Lint and format code
-ruff check --fix src tests
-black src tests
-isort src tests
-
-# Or check without fixing
-ruff check src tests
-black --check src tests
+# Lint and format
+ruff check --fix src tests mcp_server
+black src tests mcp_server
+isort src tests mcp_server
 ```
 
 ## Architecture
 
-Tech stack: 
-1. FastAPI with uvicorn, Python 3.11+ (3.13 supported), async/await. 
+**Tech stack:**
+- FastAPI with uvicorn, Python 3.13, async/await
+- Microsoft Presidio (AnalyzerEngine, AnonymizerEngine, PatternRecognizer)
+- spaCy NLP models per language (en_core_web_lg required; others optional)
+- langdetect for automatic language detection
+- Anthropic Claude API for summarization (extractive fallback if no key)
+- MCP (Model Context Protocol) via FastMCP — SSE transport (port 8001) + stdio for Claude Desktop
+- slowapi for burst rate limiting; in-memory or Redis-backed quota tracking
+- Azure Log Analytics HTTP Data Collector API with HMAC-SHA256 signing
 
-External services: 
-1. Azure Cosmos DB, 
-2. Blob Storage, 
-3. AI Search, Document Intelligence, 
-4. Service Bus, 
-5. Content Safety, 
-6. OpenAI, 
-7. Google Drive API. 
-
-The application is an API service that accepts long-running data processing jobs (web scraping, document analysis, video transcription) and tracks them via Cosmos DB.
-
-Background worker (`src/data_ingestion/data_change_worker.py`) consumes jobs from Azure Service Bus queue and updates job status. All external credentials loaded via environment variables from `.env` file (never hardcoded).
-
-**Target architecture (in progress — new code must follow this, existing code migrates incrementally):**
+**Two transport layers, one business logic layer:**
 ```
-Router → Service → Database Client → Database
-              └→ Networking Client → External API
+Browser / REST clients          AI Agents (Claude, Trimble tools)
+        │                                 │
+        │ REST :8000                      │ MCP SSE :8001 / stdio
+        ▼                                 ▼
+  src/api.py                     mcp_server/server.py
+        │                                 │
+        └──────────── shared ─────────────┘
+                   src/redaction/
+                   src/summarization/
+                   src/redaction/custom_patterns.py
 ```
-Routers handle HTTP only. Services contain business logic. Clients encapsulate external calls. Do not put business logic in routers or direct external calls in services.
+
+**Target request flow:**
+```
+Router → Service → (external call if needed)
+               └→ logger.info(..., extra={trace fields})
+                       └→ AzureLogAnalyticsHandler → Log Analytics
+```
+Routers handle HTTP only. Services contain business logic. No business logic in routers.
+
+## File organisation
+
+```
+src/
+├── api.py                    # FastAPI app init + router registration
+├── models.py                 # All Pydantic DTOs — new models go here only
+├── constants.py              # Env var keys + hardcoded constants
+├── errors/
+│   ├── exceptions.py         # Domain exceptions
+│   └── exception_handlers.py # Global HTTP error handlers
+├── routers/                  # HTTP only — no business logic
+│   ├── health.py
+│   ├── redaction.py
+│   ├── summarization.py
+│   └── patterns.py
+├── redaction/
+│   ├── extractor.py          # File → plain text
+│   ├── redactor.py           # Presidio engine (lazy-loaded singleton)
+│   └── custom_patterns.py    # Per-business-unit pattern CRUD
+├── summarization/
+│   └── summarizer.py
+└── util/
+    ├── auth.py               # verify_api_key dependency
+    ├── logging_config.py     # Structured logging + Azure handler
+    ├── rate_limit.py         # slowapi limiter + key identification
+    └── quota.py              # Daily LLM quota tracker
+
+mcp_server/
+├── app.py                    # Shared FastMCP instance
+├── server.py                 # ASGI app (SSE + auth + /health)
+├── middleware.py             # MCP_API_KEY auth
+└── tools/
+    ├── redact.py             # MCP tool wrappers → src/redaction/
+    ├── summarize.py          # MCP tool wrappers → src/summarization/
+    └── patterns.py           # MCP tool wrappers → src/redaction/custom_patterns.py
+```
 
 ## Conventions
 
 **Naming:**
-- Python files: snake_case
-- Classes: PascalCase (models use Pydantic BaseModel)
-- Functions: snake_case
-- API router prefixes: lowercase with hyphens (e.g., `/web-scraping`, `/document-intelligence`)
-- Environment variables: UPPERCASE_WITH_UNDERSCORES
+- Python files: `snake_case`
+- Classes: `PascalCase` (models use Pydantic BaseModel)
+- Functions: `snake_case`
+- API router prefixes: lowercase (e.g., `/redact`, `/patterns`)
+- Environment variables: `UPPERCASE_WITH_UNDERSCORES`
+- Custom PII entity types: `UPPERCASE_WITH_UNDERSCORES` (e.g., `CONSTR_BID_NUMBER`)
 
-**File organisation:**
-- `src/api.py` — FastAPI app initialization and router registration
-- `src/worker.py` — Background worker consuming Service Bus messages
-- `src/models.py` — All Pydantic DTOs (request/response models). All new DTOs go here, not inline in routers or domain modules.
-- `src/constants.py` — Hardcoded constants and env var keys
-- `src/cosmos_config.py` — Cosmos DB client initialization
-- `src/routers/` — API route handlers (one file per domain: web_scraping.py, document_intelligence.py, etc.)
-- `src/[domain]/` — Domain-specific service logic (e.g., `web_scraping/`, `data_funnel/`)
-- `src/util/` — Shared reusable utilities. Always check here before writing new helper logic.
-- `tests/unit/` — Unit tests with mocked dependencies
-- `tests/integration/` — Integration tests hitting real Azure services
-- `tests/utils/` — Shared fixtures and mock data
+**Models:**
+All Pydantic request/response DTOs live in `src/models.py`. Never define models inline in routers.
 
-**Utility modules (`src/util/`):**
-Always check `src/util/` before writing new helper logic — prefer reuse over duplication. Key modules:
-- `azure_storage_utils.py` — all Azure Blob Storage operations (upload, download, list, delete). Use this for any blob work.
-- `update_job_status.py` — async job lifecycle: `create_job`, `get_job`, `update_job`. Every async endpoint must track its job status through this module.
-- `google_drive_handler.py`, `google_drive_copy_handler.py` — Google Drive operations.
-- `google_space_notifier.py` — Google Chat notifications.
+**Presidio engine:**
+The Presidio `AnalyzerEngine` and `AnonymizerEngine` are lazy-loaded singletons in `src/redaction/redactor.py`. Call `mark_analyzer_dirty()` whenever custom patterns are added or deleted — this resets the singleton so it rebuilds with new patterns on the next redact call.
 
-If an existing util method almost fits but needs a change, do **not** modify it unilaterally. Present the gap, propose the change with impact analysis, and wait for explicit user approval.
+**Custom patterns:**
+Built-in patterns live in `BUILTIN_PATTERNS` in `src/redaction/custom_patterns.py` (read-only).
+User-defined patterns are persisted to `data/custom_patterns.json`. Never commit this file.
 
-**Async:**
-Selective async/await. Routers use async endpoints where needed (e.g., long-running operations with BackgroundTasks). Most domain logic is synchronous. Background worker uses asyncio for message handling. All async endpoints must track job status via `src/util/update_job_status.py`.
+**MCP tools:**
+Each tool module in `mcp_server/tools/` imports the shared `mcp` instance from `mcp_server/app.py` and registers tools via `@mcp.tool()` decorator (side-effect at import time). `mcp_server/server.py` imports all tool modules to trigger registration, then calls `mcp.sse_app()`.
 
-**Data access:**
-Currently, Cosmos DB operations use the Azure SDK directly (no ORM/service layer abstraction). New code should follow the target architecture: `Service → Database Client → Database`. Blob operations via `src/util/azure_storage_utils.py` (not raw BlobServiceClient). Job status via `src/util/update_job_status.py`.
+**Rate limiting:**
+- `LIMIT_GENERAL`, `LIMIT_PROCESS`, `LIMIT_SUMMARIZE` are plain strings defined in `src/util/rate_limit.py`
+- slowapi decorators require `request: Request` as a parameter in the route function
+- Daily LLM quota is enforced separately in `src/util/quota.py` — check before calling Claude, record after
+- Per-team limits are configured in `quota_config.json` at project root
 
-**Error handling, input validation, and logging:**
-Detailed standards for all three are in `@.github/instructions/design.instructions.md` (see **Implementation standards**). Summary:
-- Validate request bodies with Pydantic `Field` constraints; query/path params with `Query`/`Path` constraints; add `ValueError` guards in utility methods called outside router context.
-- Domain exceptions are defined in `src/errors/exceptions.py` and converted to HTTP responses via global handlers in `src/errors/exception_handlers.py` — routers must not repeat `try/except` for these.
-- Log with `logging.getLogger(__name__)`; use `info`/`warning`/`error` levels appropriately; never use `print()` or log credentials.
+**Logging:**
+Use `logging.getLogger(__name__)` everywhere. Never use `print()`. Pass trace fields via `extra={}` dict. Use `doc_filename` not `filename` in `extra` — `filename` is a reserved `LogRecord` attribute and will raise `KeyError`.
+
+**Error handling:**
+Domain exceptions are defined in `src/errors/exceptions.py` and converted to HTTP responses via global handlers in `src/errors/exception_handlers.py`. Routers must not use `try/except` for domain errors — let them bubble up.
 
 **Import statements:**
-Always place all import statements at the top of the file, grouped in the standard PEP 8 order: standard library imports, third-party imports, then local application imports — each group separated by a blank line. Inline or deferred imports are only acceptable when required to avoid circular imports or for optional/conditional dependencies that should not be loaded at module startup.
+All imports at the top of the file in PEP 8 order: stdlib → third-party → local. Deferred imports only for optional dependencies (e.g., `presidio_analyzer`, `anthropic`, `langdetect`) that should not be loaded at startup.
 
-**API patterns:**
-Request models inherit from Pydantic BaseModel. Response format varies by endpoint—usually dict or list. Query parameters for filtering/options. All endpoints except webhooks require API key header (configurable name via API_KEY_HEADER env var, default X-API-Key).
+**Auth:**
+`verify_api_key` FastAPI dependency injected on all REST routers. Auth disabled when `API_KEY` env var is not set (dev mode). MCP server uses `MCPAPIKeyMiddleware` checking `MCP_API_KEY`.
 
 ## Libraries
 
-**Allowed (actively used):**
-- fastapi[standard], uvicorn
-- azure-storage-blob, azure-identity, azure-search-documents, azure-cosmos, azure-servicebus, azure-ai-documentintelligence, azure-ai-textanalytics
-- pydantic
-- httpx (for async HTTP in tests)
-- pytest, pytest-mock, pytest-asyncio, pytest-cov
-- ruff, black, isort
-- scrapy, beautifulsoup4 (web scraping)
-- google-api-python-client, google-auth (Google Drive integration)
-- openai
-- python-dotenv, python-multipart, webvtt-py, yt-dlp
+**Actively used:**
+- `fastapi`, `uvicorn[standard]`, `pydantic`, `python-multipart`, `python-dotenv`
+- `presidio-analyzer`, `presidio-anonymizer`, `spacy`
+- `langdetect`
+- `pdfplumber`, `python-docx`
+- `anthropic`
+- `mcp[cli]`
+- `slowapi`
+- `httpx`
+- `pytest`, `pytest-cov`, `pytest-mock`, `pytest-asyncio`
+- `ruff`, `black`, `isort`
 
-**Prohibited (new code only — existing usages will be migrated incrementally):**
-- requests — use httpx instead. Existing integration tests still use requests (see testing.instructions.md); all new code must use httpx.
-- pytest.mark.skip without a reason — always provide a reason argument: `@pytest.mark.skip(reason="...")`. Bare `pytest.skip()` calls in test bodies are discouraged in newer pytest versions.
-- Unpinned or vulnerable library versions in `requirements.txt` — when adding a new dependency, always pin it to a specific version (e.g., `httpx==0.27.0`) that has no known CVEs. Verify the version against the PyPI advisory database or a vulnerability scanner before adding it. Never use unbounded version specifiers (e.g., `httpx>=0.20`) for new additions.
-
-**Patterns:**
-- Always use Pydantic v1 API (BaseModel, Field, validator patterns seen in models.py)
-- HTTP clients: Use Azure SDK clients for Azure services, httpx for external HTTP
-- Import all fixtures in tests/conftest.py from tests.utils package
-- Mock Azure SDK clients (not the whole module), patch at import site (e.g., @patch('src.document_intelligence.docintl.blob_service_client'))
+**Rules:**
+- All dependencies pinned to specific versions in `requirements.txt`
+- Never use unbounded version specifiers (e.g., `httpx>=0.20`)
 
 ## Testing
 
-Framework: pytest with pytest-cov, pytest-mock, pytest-asyncio. Run via `pytest tests/unit/` or `pytest tests/integration/`.
+Framework: pytest with pytest-cov, pytest-mock, pytest-asyncio.
 
-**Key fixtures (from tests/utils/fixtures.py):**
-- `api_client` — `TestClient` with `verify_api_key` overridden for endpoint tests
+**Key fixtures (`tests/utils/fixtures.py`):**
+- `api_client` — `TestClient` with `verify_api_key` overridden
 - `auth_headers` — test API key header
-- `mock_cosmos_client`, `mock_blob_service_client` — pre-configured Azure mocks
-- `mock_env_vars` — `monkeypatch`-based env var setup (auto-cleaned per test)
+- Mock data in `tests/utils/mock_data.py`
 
 **Patterns:**
-- Mock Azure SDK clients at their import location via `@patch('src.module.client_name')`
-- Use mock_data (MOCK_BLOBS, MOCK_JOB_STATUS, etc.) from tests/utils/mock_data.py
-- Integration tests apply `@pytest.mark.integration` marker and use real credentials from .env
-
-**When working on tests, see `.github/instructions/testing.instructions.md` for detailed standards:** AAA pattern, naming conventions (test_<method>_<scenario>_<expected_outcome>), dependency isolation, mock/patch patterns, and factory guidelines.
+- Unit tests: mock Presidio, Anthropic, file I/O — no real NLP models needed
+- Integration tests: use `TestClient` against the real FastAPI app
+- AAA pattern: Arrange / Act / Assert
+- Test naming: `test_<method>_<scenario>_<expected_outcome>`
 
 **Required before shipping:**
-- Unit tests written for new routers/functions
-- Integration test added if new endpoint or external service call
+- Unit tests written for new routers/services
 - All tests pass: `pytest tests/unit/`
 - No lint violations: `ruff check src` and `black --check src`
 
 ## Security
 
-**Credential handling:**
-All secrets via environment variables loaded with python-dotenv. API_KEY for authentication set via env var. Never hardcode credentials. .env file ignored in git (.gitignore).
+- All secrets via environment variables loaded with `python-dotenv`
+- Never hardcode credentials or API keys
+- `.env` and `data/custom_patterns.json` are git-ignored
+- Input validated with Pydantic `Field` constraints at router boundaries
+- Custom regex patterns validated with `re.compile()` before persistence
 
-**Auth:**
-API Key authentication via verify_api_key dependency injected on all routers. Header name configurable via API_KEY_HEADER env var. Webhook routes explicitly excluded from authentication.
+## Environment variables
 
-## Rules index
-
-- Design standards and principles: @.github/instructions/design.instructions.md
-- Input validation, exception handling, logging: @.github/instructions/design.instructions.md (Implementation standards)
-- Testing standards and patterns: @.github/instructions/testing.instructions.md
-
-## Post-implementation recommendation
-
-After completing any implementation task:
-1. Surface one improvement as a Socratic question — ask what might fail or go wrong in the current code without this improvement. The improvement can relate to any area: scalability, performance, maintainability, testability, observability, security, simplicity, or alignment with the target architecture.
-2. When the user answers, explain the reasoning and provide the concrete `Recommendation:`.
-
-Keep each step to 1–3 sentences. Do not bundle multiple suggestions.
+| Variable | Required | Description |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | No | Claude API key — omit for extractive fallback |
+| `API_KEY` | No | REST API key (`X-API-Key` header). Unset = auth disabled |
+| `API_KEY_HEADER` | No | Header name override (default: `X-API-Key`) |
+| `MCP_API_KEY` | No | MCP server key. Unset = auth disabled |
+| `REDIS_URL` | No | Redis for distributed rate limiting. Unset = in-memory |
+| `AZURE_LOG_WORKSPACE_ID` | No | Log Analytics workspace ID |
+| `AZURE_LOG_WORKSPACE_KEY` | No | Log Analytics shared key (base64) |
+| `AZURE_LOG_TYPE` | No | Custom table name (default: `PIIRedactionTrace`) |
 
 ## Definition of done
 
 A feature is complete only when:
 - [ ] Code follows naming, file organisation, and async conventions above
-- [ ] Unit tests written and passing (`pytest tests/unit/ -v`)
-- [ ] Integration test added if new endpoint or external service call
+- [ ] Unit tests written and passing: `pytest tests/unit/ -v`
 - [ ] `ruff check --fix` and `black` pass with no changes
-- [ ] No security issues (no hardcoded secrets, proper input validation)
-- [ ] All tests pass (`pytest tests/`)
+- [ ] No hardcoded secrets, proper input validation at boundaries
+- [ ] All tests pass: `pytest tests/`
