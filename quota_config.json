@@ -1,0 +1,42 @@
+{
+  "_comment": "Rate limits and LLM quotas per API key. 'default' applies to any key not listed in 'teams'.",
+
+  "default": {
+    "requests_per_minute": 60,
+    "process_per_hour": 30,
+    "summarize_per_day": 50
+  },
+
+  "teams": {
+    "team-construction-key": {
+      "name": "Construction Team",
+      "requests_per_minute": 120,
+      "process_per_hour": 60,
+      "summarize_per_day": 200
+    },
+    "team-agriculture-key": {
+      "name": "Agriculture Team",
+      "requests_per_minute": 120,
+      "process_per_hour": 60,
+      "summarize_per_day": 200
+    },
+    "team-geospatial-key": {
+      "name": "Geospatial Team",
+      "requests_per_minute": 120,
+      "process_per_hour": 60,
+      "summarize_per_day": 200
+    },
+    "team-hr-legal-key": {
+      "name": "HR / Legal Team",
+      "requests_per_minute": 60,
+      "process_per_hour": 30,
+      "summarize_per_day": 100
+    },
+    "admin-key": {
+      "name": "Admin / Platform",
+      "requests_per_minute": 300,
+      "process_per_hour": 200,
+      "summarize_per_day": 1000
+    }
+  }
+}

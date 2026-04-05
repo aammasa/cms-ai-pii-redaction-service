@@ -1,0 +1,81 @@
+"""
+MCP server — ASGI application factory.
+
+Architecture
+------------
+FastMCP instance (app.py)
+    ↑ tools register via @mcp.tool() (imported below for side-effects)
+    ↓ mcp.sse_app() → Starlette SSE app
+        ↓ wrapped with MCPAPIKeyMiddleware + /health route
+            ↓ exported as `app` for uvicorn
+
+Endpoints (port 8001)
+---------------------
+GET  /health        — liveness check (no auth required)
+GET  /sse           — SSE stream; AI agents open a persistent connection here
+POST /messages/     — MCP message endpoint; agents post tool calls here
+
+Tools registered
+----------------
+redact_text, list_entities, list_languages       (tools/redact.py)
+summarize_text                                   (tools/summarize.py)
+list_business_units, list_patterns,
+add_custom_pattern, delete_custom_pattern,
+test_regex_pattern                               (tools/patterns.py)
+"""
+
+import logging
+
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+from starlette.routing import Mount, Route
+
+from src.util.logging_config import configure_logging
+
+configure_logging()
+
+logger = logging.getLogger(__name__)
+
+# ── Import tool modules — side-effects register @mcp.tool() decorators ────────
+from .app import mcp  # noqa: E402  (must come after logging config)
+from .middleware import MCPAPIKeyMiddleware  # noqa: E402
+from .tools import patterns, redact, summarize  # noqa: E402, F401
+
+logger.info(
+    "MCP tools registered: %s",
+    [t.name for t in mcp._tool_manager.list_tools()],
+)
+
+
+# ── Health endpoint ────────────────────────────────────────────────────────────
+
+async def health(request: Request) -> JSONResponse:
+    tools = [t.name for t in mcp._tool_manager.list_tools()]
+    return JSONResponse({
+        "status": "ok",
+        "service": "mcp-pii-redaction",
+        "transport": "sse",
+        "tools": tools,
+        "tool_count": len(tools),
+    })
+
+
+# ── ASGI app ───────────────────────────────────────────────────────────────────
+
+def create_app() -> Starlette:
+    sse_starlette = mcp.sse_app()
+
+    return Starlette(
+        routes=[
+            Route("/health", health, methods=["GET"]),
+            Mount("/", app=sse_starlette),
+        ],
+        middleware=[
+            Middleware(MCPAPIKeyMiddleware),
+        ],
+    )
+
+
+app = create_app()

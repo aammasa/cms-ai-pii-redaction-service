@@ -1,0 +1,1424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Redact — PII Removal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,300&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet"/>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #0d0d0d;
+  --surface:   #141414;
+  --border:    #242424;
+  --border-hi: #333;
+  --text:      #e8e4dc;
+  --muted:     #666;
+  --accent:    #c8f55a;
+  --accent-d:  #a3cc3a;
+  --danger:    #ff5f5f;
+  --tag-bg:    #1e2a0e;
+  --tag-text:  #8ecb2a;
+  --mono:      'DM Mono', monospace;
+  --sans:      'DM Sans', sans-serif;
+  --radius:    10px;
+  --radius-lg: 16px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Header ─────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 32px;
+  border-bottom: 1px solid var(--border);
+}
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.logo-mark {
+  width: 28px; height: 28px;
+  background: var(--accent);
+  border-radius: 7px;
+  display: flex; align-items: center; justify-content: center;
+}
+.logo-mark svg { width: 14px; height: 14px; }
+.status-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #3a3a3a;
+  transition: background .3s;
+}
+.status-dot.online { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.header-right { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--muted); }
+
+/* ── Main layout ─────────────────────────────────────────── */
+main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: calc(100vh - 61px);
+  overflow: hidden;
+}
+
+/* ── Upload zone ─────────────────────────────────────────── */
+#upload-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 0;
+  animation: fadeIn .4s ease;
+}
+#drop-area {
+  width: 480px;
+  border: 1.5px dashed var(--border-hi);
+  border-radius: var(--radius-lg);
+  padding: 56px 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color .2s, background .2s;
+  position: relative;
+}
+#drop-area:hover, #drop-area.drag-over {
+  border-color: var(--accent);
+  background: rgba(200, 245, 90, 0.03);
+}
+#drop-area input[type=file] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+}
+.upload-icon {
+  width: 44px; height: 44px;
+  border: 1px solid var(--border-hi);
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 auto 20px;
+  color: var(--muted);
+}
+.upload-title { font-size: 16px; font-weight: 500; margin-bottom: 6px; }
+.upload-sub { font-size: 12px; color: var(--muted); }
+.upload-sub span { color: var(--accent); }
+.upload-formats {
+  margin-top: 28px;
+  display: flex; gap: 6px; justify-content: center; flex-wrap: wrap;
+}
+.fmt-tag {
+  font-family: var(--mono); font-size: 10px; font-weight: 400;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+/* ── Entity selector ─────────────────────────────────────── */
+#entity-panel {
+  width: 480px;
+  margin-top: 20px;
+}
+.ep-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.ep-title { font-size: 11px; color: var(--muted); letter-spacing: 0.06em; text-transform: uppercase; }
+.ep-actions { display: flex; gap: 8px; }
+.ep-btn {
+  font-size: 11px; color: var(--muted); background: none; border: none;
+  cursor: pointer; padding: 0; transition: color .15s;
+}
+.ep-btn:hover { color: var(--text); }
+.entity-grid {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.entity-chip {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 11px; cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+  color: var(--muted);
+  user-select: none;
+}
+.entity-chip.active {
+  border-color: var(--accent);
+  background: var(--tag-bg);
+  color: var(--tag-text);
+}
+.entity-chip .dot {
+  width: 5px; height: 5px; border-radius: 50%;
+  background: currentColor; opacity: 0.6; flex-shrink: 0;
+}
+
+/* ── Language selector ───────────────────────────────────── */
+#language-panel { width: 480px; margin-top: 14px; }
+.lang-select {
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 7px 10px;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23666' stroke-width='1.5' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+  transition: border-color .15s;
+}
+.lang-select:focus { outline: none; border-color: var(--accent); }
+.lang-select option { background: #1a1a1a; }
+
+/* ── Operator selector ───────────────────────────────────── */
+#operator-panel { width: 480px; margin-top: 14px; }
+.op-row { display: flex; gap: 6px; }
+.op-btn {
+  flex: 1; padding: 7px 6px; font-size: 11px; font-family: var(--mono);
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: none; color: var(--muted); cursor: pointer;
+  transition: all .15s; text-align: center;
+}
+.op-btn.active { border-color: var(--accent); color: var(--accent); background: var(--tag-bg); }
+.op-btn:hover:not(.active) { border-color: var(--border-hi); color: var(--text); }
+
+/* ── Workspace (results) ─────────────────────────────────── */
+#workspace {
+  display: none;
+  grid-template-columns: 260px 1fr 1fr;
+  grid-template-rows: 1fr auto;
+  height: 100%;
+  overflow: hidden;
+  animation: fadeIn .35s ease;
+}
+#workspace.visible { display: grid; }
+
+/* panels */
+.panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* sidebar */
+.sidebar {
+  grid-row: 1 / 3;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.sidebar-top {
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-top h3 { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+.file-info { display: flex; align-items: center; gap: 10px; }
+.file-icon {
+  width: 32px; height: 32px; border-radius: 7px;
+  background: var(--surface); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  font-family: var(--mono); font-size: 9px; color: var(--accent); font-weight: 500;
+}
+.file-name { font-size: 12px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-type { font-size: 10px; color: var(--muted); }
+
+.sidebar-section {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-section h4 { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 10px; }
+
+.entity-list { display: flex; flex-direction: column; gap: 5px; }
+.entity-row {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px;
+}
+.entity-row .name { color: var(--muted); }
+.entity-row .count {
+  font-family: var(--mono); font-size: 10px;
+  background: var(--tag-bg); color: var(--tag-text);
+  padding: 1px 7px; border-radius: 10px;
+}
+
+.sidebar-controls { padding: 14px 20px; display: flex; flex-direction: column; gap: 8px; }
+.ctrl-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+.op-mini { display: flex; gap: 4px; }
+.op-mini button {
+  flex: 1; padding: 5px 4px; font-size: 10px; font-family: var(--mono);
+  border: 1px solid var(--border); border-radius: 6px;
+  background: none; color: var(--muted); cursor: pointer; transition: all .12s;
+}
+.op-mini button.active { border-color: var(--accent); color: var(--accent); background: var(--tag-bg); }
+.op-mini button:hover:not(.active) { border-color: var(--border-hi); color: var(--text); }
+
+.entity-toggles { display: flex; flex-direction: column; gap: 4px; overflow-y: auto; max-height: 220px; }
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 0; cursor: pointer;
+}
+.toggle-row label { font-size: 11px; cursor: pointer; }
+.toggle-sw {
+  width: 28px; height: 16px; border-radius: 8px;
+  background: var(--border); position: relative; transition: background .15s; flex-shrink: 0;
+}
+.toggle-sw.on { background: var(--accent); }
+.toggle-sw::after {
+  content: ''; position: absolute;
+  width: 11px; height: 11px; border-radius: 50%; background: #fff;
+  top: 2.5px; left: 2.5px; transition: transform .15s;
+}
+.toggle-sw.on::after { transform: translateX(12px); }
+
+.reprocess-btn {
+  margin-top: 4px; width: 100%; padding: 8px; font-size: 12px; font-family: var(--sans);
+  border: 1px solid var(--border-hi); border-radius: var(--radius);
+  background: none; color: var(--text); cursor: pointer; transition: all .15s;
+}
+.reprocess-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* panels */
+.panels-area {
+  grid-column: 2 / 4;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
+.panels-headers {
+  display: flex;
+  flex-shrink: 0;
+}
+.panels-headers .panel-header { flex: 1; }
+.panels-headers .panel-header:first-child { border-right: 1px solid var(--border); }
+.panels-scroll {
+  display: flex;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.panel-header {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.panel-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.copy-btn {
+  font-size: 11px; color: var(--muted); background: none; border: none; cursor: pointer;
+  padding: 3px 8px; border-radius: 5px; transition: all .12s;
+}
+.copy-btn:hover { color: var(--text); background: var(--surface); }
+
+.panel-body {
+  padding: 20px;
+  overflow-y: visible;
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #b0aba2;
+}
+#original-panel { border-right: 1px solid var(--border); }
+
+.pii-highlight {
+  background: rgba(255, 95, 95, 0.12);
+  color: var(--danger);
+  border-radius: 3px;
+  padding: 0 2px;
+  font-weight: 500;
+}
+.pii-tag {
+  display: inline-block;
+  background: var(--tag-bg);
+  color: var(--tag-text);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* summary bar */
+.summary-bar {
+  grid-column: 2 / 4;
+  border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 20px;
+}
+.sum-label { font-size: 11px; color: var(--muted); white-space: nowrap; }
+#summary-text { font-size: 12.5px; flex: 1; color: var(--text); line-height: 1.5; }
+.sum-btns { display: flex; gap: 4px; flex-shrink: 0; }
+.sum-len {
+  font-size: 10px; padding: 3px 8px; border: 1px solid var(--border);
+  border-radius: 5px; background: none; color: var(--muted); cursor: pointer;
+  transition: all .12s; font-family: var(--mono);
+}
+.sum-len.active { border-color: var(--accent); color: var(--accent); background: var(--tag-bg); }
+.sum-go {
+  font-size: 11px; padding: 4px 12px;
+  background: var(--accent); color: #111; border: none; border-radius: 5px;
+  cursor: pointer; font-weight: 500; transition: background .12s;
+}
+.sum-go:hover { background: var(--accent-d); }
+.sum-go:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* new file btn */
+.new-file-btn {
+  font-size: 11px; padding: 5px 12px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: none; color: var(--muted); cursor: pointer; transition: all .12s;
+}
+.new-file-btn:hover { border-color: var(--border-hi); color: var(--text); }
+
+/* loader */
+.loader {
+  display: none; position: fixed; inset: 0; z-index: 999;
+  background: rgba(13,13,13,.85);
+  align-items: center; justify-content: center; flex-direction: column; gap: 16px;
+}
+.loader.visible { display: flex; }
+.spinner {
+  width: 32px; height: 32px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+}
+.loader-text { font-size: 12px; color: var(--muted); }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+/* ── Admin button ────────────────────────────────────────── */
+.admin-btn {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 11px; padding: 5px 10px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: none; color: var(--muted); cursor: pointer; transition: all .12s;
+}
+.admin-btn:hover { border-color: var(--border-hi); color: var(--text); }
+.admin-btn svg { flex-shrink: 0; }
+
+/* ── Admin drawer overlay ────────────────────────────────── */
+#admin-overlay {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: rgba(0,0,0,.6);
+}
+#admin-overlay.open { display: block; }
+
+#admin-drawer {
+  position: fixed; top: 0; right: -680px; bottom: 0; width: 680px;
+  background: var(--surface); border-left: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  transition: right .28s cubic-bezier(.4,0,.2,1);
+  z-index: 201;
+  overflow: hidden;
+}
+#admin-drawer.open { right: 0; }
+
+.drawer-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 18px 24px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.drawer-title { font-size: 14px; font-weight: 500; }
+.drawer-sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.drawer-close {
+  width: 28px; height: 28px; border-radius: 6px;
+  background: none; border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .12s;
+}
+.drawer-close:hover { border-color: var(--border-hi); color: var(--text); }
+
+/* unit tabs */
+.unit-tabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--border); flex-shrink: 0;
+  padding: 0 24px;
+}
+.unit-tab {
+  padding: 10px 14px; font-size: 11px; color: var(--muted); cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color .12s, border-color .12s; white-space: nowrap;
+  background: none; border-top: none; border-left: none; border-right: none;
+}
+.unit-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.unit-tab:hover:not(.active) { color: var(--text); }
+
+/* drawer body scroll */
+.drawer-body {
+  flex: 1; overflow-y: auto; padding: 0;
+  display: flex; flex-direction: column; gap: 0;
+}
+
+/* pattern table */
+.pattern-section { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.section-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;
+}
+.section-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.section-count {
+  font-size: 10px; font-family: var(--mono);
+  background: var(--tag-bg); color: var(--tag-text);
+  padding: 1px 7px; border-radius: 8px;
+}
+
+.pattern-table { width: 100%; border-collapse: collapse; }
+.pattern-table th {
+  font-size: 9px; font-weight: 400; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .06em; padding: 0 8px 8px; text-align: left;
+}
+.pattern-table td {
+  font-size: 11px; padding: 8px 8px;
+  border-top: 1px solid var(--border); vertical-align: top;
+}
+.pattern-table tr:hover td { background: rgba(255,255,255,.02); }
+.entity-badge {
+  font-family: var(--mono); font-size: 10px;
+  background: var(--tag-bg); color: var(--tag-text);
+  padding: 2px 7px; border-radius: 4px; white-space: nowrap;
+}
+.builtin-badge {
+  font-size: 9px; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 1px 5px;
+}
+.pattern-regex {
+  font-family: var(--mono); font-size: 10px; color: var(--muted);
+  word-break: break-all;
+}
+.pattern-delete {
+  background: none; border: none; color: var(--danger); cursor: pointer;
+  font-size: 11px; padding: 2px 6px; border-radius: 4px; transition: background .12s;
+  opacity: 0.7;
+}
+.pattern-delete:hover { background: rgba(255,95,95,.1); opacity: 1; }
+.empty-state {
+  font-size: 12px; color: var(--muted); padding: 16px 0; text-align: center;
+}
+
+/* add pattern form */
+.add-pattern-section {
+  padding: 20px 24px;
+}
+.add-pattern-section .section-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 14px; display: block; }
+
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.form-field { display: flex; flex-direction: column; gap: 5px; }
+.form-field.span2 { grid-column: span 2; }
+.form-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.form-input, .form-textarea {
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+  color: var(--text); font-family: var(--mono); font-size: 11px;
+  padding: 7px 10px; transition: border-color .12s;
+}
+.form-input:focus, .form-textarea:focus { outline: none; border-color: var(--accent); }
+.form-textarea { resize: vertical; min-height: 56px; }
+.form-hint { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+.form-actions { display: flex; gap: 8px; margin-top: 14px; }
+.btn-primary {
+  padding: 7px 16px; background: var(--accent); color: #111;
+  border: none; border-radius: 6px; font-size: 12px; font-weight: 500;
+  cursor: pointer; transition: background .12s;
+}
+.btn-primary:hover { background: var(--accent-d); }
+.btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+.btn-secondary {
+  padding: 7px 14px; background: none; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 6px; font-size: 12px;
+  cursor: pointer; transition: all .12s;
+}
+.btn-secondary:hover { border-color: var(--border-hi); color: var(--text); }
+
+/* test panel */
+.test-section {
+  padding: 20px 24px; background: rgba(0,0,0,.2);
+  border-top: 1px solid var(--border);
+}
+.test-section .section-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 12px; display: block; }
+.test-area { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.test-results { display: flex; flex-direction: column; gap: 4px; max-height: 120px; overflow-y: auto; }
+.test-match {
+  font-family: var(--mono); font-size: 10px;
+  background: var(--tag-bg); color: var(--tag-text);
+  padding: 3px 8px; border-radius: 4px; display: flex; justify-content: space-between;
+}
+.test-match-pos { color: var(--muted); }
+.test-no-match { font-size: 11px; color: var(--muted); padding: 8px 0; }
+.form-error { font-size: 11px; color: var(--danger); margin-top: 6px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 14 14" fill="none" stroke="#111" stroke-width="1.5" stroke-linecap="round">
+        <path d="M2 4h10M2 7h6M2 10h8"/>
+        <circle cx="11" cy="10" r="2.5" fill="#111" stroke="none"/>
+        <path d="M10 10h2M11 9v2" stroke="#111" stroke-width="1"/>
+      </svg>
+    </div>
+    redact
+  </div>
+  <div class="header-right">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-label">connecting…</span>
+    <button class="new-file-btn" id="new-file-btn" style="display:none" onclick="resetToUpload()">New file</button>
+    <button class="admin-btn" onclick="openAdmin()">
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <circle cx="6" cy="6" r="2"/>
+        <path d="M6 1v1M6 10v1M1 6h1M10 6h1M2.5 2.5l.7.7M8.8 8.8l.7.7M9.5 2.5l-.7.7M3.2 8.8l-.7.7"/>
+      </svg>
+      Custom Patterns
+    </button>
+  </div>
+</header>
+
+<main>
+
+  <!-- ── Upload screen ───────────────────────────────────── -->
+  <div id="upload-zone">
+    <div id="drop-area">
+      <input type="file" id="file-input" accept=".txt,.pdf,.docx,.doc,.csv,.md" onchange="onFileSelected(event)"/>
+      <div class="upload-icon">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M9 12V4M6 7l3-3 3 3"/><path d="M3 14h12"/>
+        </svg>
+      </div>
+      <div class="upload-title">Drop your file here</div>
+      <div class="upload-sub">or <span>browse to upload</span></div>
+      <div class="upload-formats">
+        <span class="fmt-tag">.txt</span>
+        <span class="fmt-tag">.pdf</span>
+        <span class="fmt-tag">.docx</span>
+        <span class="fmt-tag">.csv</span>
+        <span class="fmt-tag">.md</span>
+      </div>
+    </div>
+
+    <div id="entity-panel">
+      <div class="ep-header">
+        <span class="ep-title">Entities to detect</span>
+        <div class="ep-actions">
+          <button class="ep-btn" onclick="selectAll()">All</button>
+          <button class="ep-btn" onclick="selectNone()">None</button>
+        </div>
+      </div>
+      <div class="entity-grid" id="entity-grid"></div>
+    </div>
+
+    <div id="language-panel">
+      <div class="ep-header">
+        <span class="ep-title">Language</span>
+      </div>
+      <select class="lang-select" id="lang-select">
+        <option value="auto">Auto-detect</option>
+      </select>
+    </div>
+
+    <div id="operator-panel">
+      <div class="ep-header">
+        <span class="ep-title">Redaction style</span>
+      </div>
+      <div class="op-row" id="op-row"></div>
+    </div>
+  </div>
+
+  <!-- ── Workspace ───────────────────────────────────────── -->
+  <div id="workspace">
+
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <h3>File</h3>
+        <div class="file-info">
+          <div class="file-icon" id="sb-ext">TXT</div>
+          <div>
+            <div class="file-name" id="sb-name">—</div>
+            <div class="file-type" id="sb-chars">—</div>
+            <div class="file-type" id="sb-lang" style="margin-top:2px;color:var(--accent)"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <h4>Detected PII</h4>
+        <div class="entity-list" id="entity-list"></div>
+      </div>
+
+      <div class="sidebar-controls">
+        <div>
+          <div class="ctrl-label">Redaction style</div>
+          <div class="op-mini" id="op-mini"></div>
+        </div>
+        <div>
+          <div class="ctrl-label">Active entities</div>
+          <div class="entity-toggles" id="entity-toggles"></div>
+        </div>
+        <button class="reprocess-btn" onclick="reprocess()">Apply changes</button>
+      </div>
+    </aside>
+
+    <!-- Panels (shared scroll) -->
+    <div class="panels-area">
+      <div class="panels-headers">
+        <div class="panel-header">
+          <span class="panel-label">Original</span>
+          <button class="copy-btn" onclick="copy('original')">Copy</button>
+        </div>
+        <div class="panel-header">
+          <span class="panel-label">Redacted</span>
+          <button class="copy-btn" onclick="copy('redacted')">Copy</button>
+        </div>
+      </div>
+      <div class="panels-scroll">
+        <div class="panel-body" id="original-panel"></div>
+        <div class="panel-body" id="redacted-panel"></div>
+      </div>
+    </div>
+
+    <!-- Summary bar -->
+    <div class="summary-bar">
+      <span class="sum-label">Summary</span>
+      <span id="summary-text" style="color:var(--muted);font-size:12px">— run summarization on the redacted text</span>
+      <div class="sum-btns">
+        <button class="sum-len active" data-len="short" onclick="setLen(this)">short</button>
+        <button class="sum-len" data-len="medium" onclick="setLen(this)">medium</button>
+        <button class="sum-len" data-len="detailed" onclick="setLen(this)">detailed</button>
+        <button class="sum-go" id="sum-go" onclick="runSummarize()">Summarize</button>
+      </div>
+    </div>
+
+  </div>
+
+</main>
+
+<!-- ── Admin drawer ─────────────────────────────────────── -->
+<div id="admin-overlay" onclick="closeAdmin()"></div>
+<div id="admin-drawer">
+  <div class="drawer-header">
+    <div>
+      <div class="drawer-title">Custom PII Patterns</div>
+      <div class="drawer-sub">Define per-business-unit regex patterns for domain-specific identifiers</div>
+    </div>
+    <button class="drawer-close" onclick="closeAdmin()">✕</button>
+  </div>
+
+  <div class="unit-tabs" id="unit-tabs">
+    <!-- rendered by JS -->
+  </div>
+
+  <div class="drawer-body" id="drawer-body">
+    <!-- rendered by JS -->
+  </div>
+</div>
+
+<!-- Loader -->
+<div class="loader" id="loader">
+  <div class="spinner"></div>
+  <div class="loader-text" id="loader-text">Processing…</div>
+</div>
+
+<script>
+const API = 'http://localhost:8000';
+
+// ── State ──────────────────────────────────────────────────
+let state = {
+  file: null,
+  originalText: '',
+  redactedText: '',
+  entitiesFound: [],
+  entityCounts: {},
+  allEntities: [],
+  activeEntities: new Set(),
+  operator: 'replace',
+  sumLen: 'short',
+  language: 'auto',         // selected language (upload screen)
+  detectedLanguage: '',     // returned by API after processing
+  allLanguages: [],
+};
+
+// ── Init ───────────────────────────────────────────────────
+async function init() {
+  try {
+    const res = await fetch(`${API}/health`);
+    if (res.ok) {
+      document.getElementById('status-dot').classList.add('online');
+      document.getElementById('status-label').textContent = 'API connected';
+    }
+  } catch { document.getElementById('status-label').textContent = 'API offline'; }
+
+  try {
+    const [entRes, langRes] = await Promise.all([
+      fetch(`${API}/entities`),
+      fetch(`${API}/languages`),
+    ]);
+    const entData = await entRes.json();
+    state.allEntities = entData.entities;
+    state.activeEntities = new Set(entData.entities.map(e => e.id));
+
+    if (langRes.ok) {
+      const langData = await langRes.json();
+      state.allLanguages = langData.languages;
+      renderLanguageSelect();
+    }
+    renderEntityChips();
+    renderOperatorBtns();
+  } catch {
+    // Fallback if API is offline
+    state.allEntities = [
+      {id:'PERSON',label:'Person'},{id:'EMAIL_ADDRESS',label:'Email'},
+      {id:'PHONE_NUMBER',label:'Phone'},{id:'CREDIT_CARD',label:'Credit card'},
+      {id:'US_SSN',label:'SSN'},{id:'LOCATION',label:'Location'},
+      {id:'DATE_TIME',label:'Date/time'},{id:'URL',label:'URL'},
+      {id:'IP_ADDRESS',label:'IP address'},{id:'ORGANIZATION',label:'Organization'},
+    ];
+    state.activeEntities = new Set(state.allEntities.map(e => e.id));
+    renderEntityChips();
+    renderOperatorBtns();
+  }
+}
+
+// ── Language selector ──────────────────────────────────────
+function renderLanguageSelect() {
+  const sel = document.getElementById('lang-select');
+  // Keep the "Auto-detect" option, append installed languages
+  sel.innerHTML = '<option value="auto">Auto-detect</option>';
+  state.allLanguages.forEach(lang => {
+    const opt = document.createElement('option');
+    opt.value = lang.code;
+    opt.textContent = lang.label + (lang.installed ? '' : ' (model not installed)');
+    opt.disabled = !lang.installed;
+    sel.appendChild(opt);
+  });
+  sel.value = state.language;
+  sel.onchange = () => { state.language = sel.value; };
+}
+
+// ── Entity chips (upload screen) ───────────────────────────
+function renderEntityChips() {
+  const grid = document.getElementById('entity-grid');
+  grid.innerHTML = '';
+  state.allEntities.forEach(e => {
+    const chip = document.createElement('div');
+    chip.className = 'entity-chip' + (state.activeEntities.has(e.id) ? ' active' : '');
+    chip.dataset.id = e.id;
+    chip.innerHTML = `<span class="dot"></span>${e.label}`;
+    chip.onclick = () => toggleEntity(e.id, chip);
+    grid.appendChild(chip);
+  });
+}
+
+function toggleEntity(id, el) {
+  if (state.activeEntities.has(id)) { state.activeEntities.delete(id); el.classList.remove('active'); }
+  else { state.activeEntities.add(id); el.classList.add('active'); }
+}
+function selectAll() { state.allEntities.forEach(e => state.activeEntities.add(e.id)); renderEntityChips(); }
+function selectNone() { state.activeEntities.clear(); renderEntityChips(); }
+
+// ── Operator buttons ───────────────────────────────────────
+const OPERATORS = [
+  {id:'replace', label:'<TAG>'},
+  {id:'redact',  label:'remove'},
+  {id:'mask',    label:'****'},
+  {id:'hash',    label:'hash'},
+];
+
+function renderOperatorBtns() {
+  ['op-row','op-mini'].forEach(rowId => {
+    const row = document.getElementById(rowId);
+    if (!row) return;
+    row.innerHTML = '';
+    OPERATORS.forEach(op => {
+      const btn = document.createElement('button');
+      btn.className = (rowId === 'op-row' ? 'op-btn' : '') + (state.operator === op.id ? ' active' : '');
+      btn.textContent = op.label;
+      btn.onclick = () => {
+        state.operator = op.id;
+        renderOperatorBtns();
+        // Auto-reprocess when changing style from the workspace sidebar
+        if (rowId === 'op-mini' && state.originalText) reprocess();
+      };
+      row.appendChild(btn);
+    });
+  });
+}
+
+function setOperator(id) {
+  state.operator = id;
+  renderOperatorBtns();
+}
+
+// ── File upload ────────────────────────────────────────────
+function triggerUpload() { document.getElementById('file-input').click(); }
+
+const dropArea = document.getElementById('drop-area');
+dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('drag-over'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-over'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault(); dropArea.classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) processFile(file);
+});
+
+function onFileSelected(e) {
+  const file = e.target.files[0];
+  if (file) processFile(file);
+}
+
+async function processFile(file) {
+  state.file = file;
+  showLoader('Extracting and redacting…');
+
+  const form = new FormData();
+  form.append('file', file);
+
+  const url = `${API}/process?language=${encodeURIComponent(state.language)}`;
+  try {
+    const res = await fetch(url, { method: 'POST', body: form });
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    const data = await res.json();
+
+    state.originalText = data.original_text;
+    state.redactedText = data.redacted_text;
+    state.entitiesFound = data.entities_found;
+    state.entityCounts = data.entity_counts;
+    state.detectedLanguage = data.detected_language;
+
+    showWorkspace(file, data);
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    hideLoader();
+  }
+}
+
+// ── Reprocess with updated settings ───────────────────────
+async function reprocess() {
+  showLoader('Reprocessing…');
+  try {
+    const res = await fetch(`${API}/redact`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        text: state.originalText,
+        language: state.detectedLanguage || state.language,
+        entities: [...state.activeEntities],
+        operator: state.operator,
+      }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const data = await res.json();
+    state.redactedText = data.redacted_text;
+    state.entitiesFound = data.entities_found;
+    state.entityCounts = data.entity_counts;
+    renderPanels();
+    renderEntityList();
+    document.getElementById('summary-text').textContent = '— run summarization on the redacted text';
+    document.getElementById('summary-text').style.color = 'var(--muted)';
+    document.getElementById('summary-text').style.fontSize = '12px';
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    hideLoader();
+  }
+}
+
+// ── Workspace rendering ────────────────────────────────────
+function showWorkspace(file, data) {
+  document.getElementById('upload-zone').style.display = 'none';
+  document.getElementById('workspace').classList.add('visible');
+  document.getElementById('new-file-btn').style.display = '';
+
+  const ext = file.name.split('.').pop().toUpperCase();
+  document.getElementById('sb-ext').textContent = ext;
+  document.getElementById('sb-name').textContent = file.name;
+  document.getElementById('sb-chars').textContent = `${data.original_text.length.toLocaleString()} chars`;
+  const langLabel = state.allLanguages.find(l => l.code === data.detected_language)?.label || data.detected_language || '';
+  document.getElementById('sb-lang').textContent = langLabel ? `${langLabel} detected` : '';
+
+  renderPanels();
+  renderEntityList();
+  renderSidebarControls();
+}
+
+function renderPanels() {
+  // Original: highlight found PII in red
+  let orig = escapeHtml(state.originalText);
+  const sorted = [...state.entitiesFound].sort((a,b) => b.start - a.start);
+  // Work on char array to handle offsets properly
+  let chars = state.originalText.split('');
+  sorted.forEach(e => {
+    const snippet = state.originalText.slice(e.start, e.end);
+    const tag = `<span class="pii-highlight" title="${e.type}">${escapeHtml(snippet)}</span>`;
+    chars.splice(e.start, e.end - e.start, tag);
+  });
+  // Rebuild from escaped chars
+  let origHtml = escapeHtml(state.originalText);
+  // Simple approach: replace known spans
+  sorted.forEach(e => {
+    const raw = state.originalText.slice(e.start, e.end);
+    origHtml = origHtml.replace(
+      escapeHtml(raw),
+      `<span class="pii-highlight" title="${e.type}">${escapeHtml(raw)}</span>`
+    );
+  });
+  document.getElementById('original-panel').innerHTML = origHtml;
+
+  // Redacted: highlight tags
+  const redHtml = escapeHtml(state.redactedText)
+    .replace(/&lt;([A-Z_]+)&gt;/g, '<span class="pii-tag">&lt;$1&gt;</span>');
+  document.getElementById('redacted-panel').innerHTML = redHtml;
+}
+
+function renderEntityList() {
+  const list = document.getElementById('entity-list');
+  list.innerHTML = '';
+  if (!Object.keys(state.entityCounts).length) {
+    list.innerHTML = '<div style="font-size:11px;color:var(--muted)">No PII detected</div>';
+    return;
+  }
+  Object.entries(state.entityCounts)
+    .sort((a,b) => b[1]-a[1])
+    .forEach(([type, count]) => {
+      const label = state.allEntities.find(e => e.id === type)?.label || type;
+      list.innerHTML += `<div class="entity-row"><span class="name">${label}</span><span class="count">${count}</span></div>`;
+    });
+}
+
+function renderSidebarControls() {
+  renderOperatorBtns();
+
+  const toggles = document.getElementById('entity-toggles');
+  toggles.innerHTML = '';
+  const detected = new Set(state.entitiesFound.map(e => e.type));
+  state.allEntities.forEach(e => {
+    if (!detected.has(e.id)) return;
+    const isOn = state.activeEntities.has(e.id);
+    const row = document.createElement('div');
+    row.className = 'toggle-row';
+    row.innerHTML = `<label>${e.label}</label><div class="toggle-sw ${isOn?'on':''}" data-id="${e.id}"></div>`;
+    row.onclick = () => {
+      const sw = row.querySelector('.toggle-sw');
+      const id = sw.dataset.id;
+      if (state.activeEntities.has(id)) { state.activeEntities.delete(id); sw.classList.remove('on'); }
+      else { state.activeEntities.add(id); sw.classList.add('on'); }
+    };
+    toggles.appendChild(row);
+  });
+}
+
+// ── Summarize ──────────────────────────────────────────────
+function setLen(btn) {
+  document.querySelectorAll('.sum-len').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  state.sumLen = btn.dataset.len;
+}
+
+async function runSummarize() {
+  const btn = document.getElementById('sum-go');
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const res = await fetch(`${API}/summarize`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ redacted_text: state.redactedText, length: state.sumLen }),
+    });
+    if (!res.ok) throw new Error((await res.json()).detail);
+    const data = await res.json();
+    const el = document.getElementById('summary-text');
+    el.textContent = data.summary;
+    el.style.color = 'var(--text)';
+    el.style.fontSize = '12.5px';
+  } catch (err) {
+    document.getElementById('summary-text').textContent = 'Error: ' + err.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Summarize';
+  }
+}
+
+// ── Utilities ──────────────────────────────────────────────
+function copy(which) {
+  const text = which === 'original' ? state.originalText : state.redactedText;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = event.target;
+    btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+}
+
+function showLoader(msg) {
+  document.getElementById('loader-text').textContent = msg || 'Processing…';
+  document.getElementById('loader').classList.add('visible');
+}
+function hideLoader() { document.getElementById('loader').classList.remove('visible'); }
+
+function resetToUpload() {
+  document.getElementById('workspace').classList.remove('visible');
+  document.getElementById('upload-zone').style.display = '';
+  document.getElementById('new-file-btn').style.display = 'none';
+  document.getElementById('file-input').value = '';
+  document.getElementById('summary-text').textContent = '— run summarization on the redacted text';
+  document.getElementById('sb-lang').textContent = '';
+  state.file = null; state.originalText = ''; state.redactedText = '';
+  state.detectedLanguage = ''; state.language = 'auto';
+  document.getElementById('lang-select').value = 'auto';
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Admin panel ────────────────────────────────────────────
+let admin = {
+  units: [],
+  patterns: [],
+  activeUnit: null,
+  formRegexes: [],  // live regex inputs while adding
+};
+
+async function openAdmin() {
+  document.getElementById('admin-overlay').classList.add('open');
+  document.getElementById('admin-drawer').classList.add('open');
+  await refreshAdmin();
+}
+
+function closeAdmin() {
+  document.getElementById('admin-overlay').classList.remove('open');
+  document.getElementById('admin-drawer').classList.remove('open');
+}
+
+async function refreshAdmin() {
+  try {
+    const [unitsRes, patsRes] = await Promise.all([
+      fetch(`${API}/patterns/units`),
+      fetch(`${API}/patterns`),
+    ]);
+    const unitsData = await unitsRes.json();
+    const patsData  = await patsRes.json();
+    admin.units    = unitsData.units;
+    admin.patterns = patsData.patterns;
+    if (!admin.activeUnit && admin.units.length) admin.activeUnit = admin.units[0].id;
+    renderAdminTabs();
+    renderAdminBody();
+  } catch (err) {
+    document.getElementById('drawer-body').innerHTML =
+      `<div style="padding:24px;color:var(--danger);font-size:12px">Failed to load patterns: ${err.message}</div>`;
+  }
+}
+
+function renderAdminTabs() {
+  const tabsEl = document.getElementById('unit-tabs');
+  tabsEl.innerHTML = '';
+  admin.units.forEach(u => {
+    const btn = document.createElement('button');
+    btn.className = 'unit-tab' + (admin.activeUnit === u.id ? ' active' : '');
+    btn.textContent = u.label;
+    btn.onclick = () => { admin.activeUnit = u.id; renderAdminTabs(); renderAdminBody(); };
+    tabsEl.appendChild(btn);
+  });
+}
+
+function renderAdminBody() {
+  const body = document.getElementById('drawer-body');
+  const unit = admin.units.find(u => u.id === admin.activeUnit);
+  if (!unit) return;
+
+  const unitPatterns = admin.patterns.filter(p => p.unit === admin.activeUnit);
+  const builtins = unitPatterns.filter(p => p.builtin);
+  const custom   = unitPatterns.filter(p => !p.builtin);
+
+  body.innerHTML = '';
+
+  // ── Pattern table ──────────────────────────────────────────
+  const tableSection = document.createElement('div');
+  tableSection.className = 'pattern-section';
+  tableSection.innerHTML = `
+    <div class="section-header">
+      <span class="section-title">${unit.label} Patterns</span>
+      <span class="section-count">${unitPatterns.length} total · ${custom.length} custom</span>
+    </div>
+    ${unitPatterns.length === 0 ? '<div class="empty-state">No patterns for this unit yet.</div>' : `
+    <table class="pattern-table">
+      <thead><tr>
+        <th>Entity Type</th>
+        <th>Label</th>
+        <th>Regex(es)</th>
+        <th></th>
+      </tr></thead>
+      <tbody id="pat-tbody-${admin.activeUnit}"></tbody>
+    </table>`}
+  `;
+  body.appendChild(tableSection);
+
+  if (unitPatterns.length > 0) {
+    const tbody = tableSection.querySelector(`#pat-tbody-${admin.activeUnit}`);
+    unitPatterns.forEach(p => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <span class="entity-badge">${p.entity_type}</span><br>
+          ${p.builtin ? '<span class="builtin-badge" style="margin-top:4px;display:inline-block">built-in</span>' : ''}
+        </td>
+        <td style="color:var(--text)">${escapeHtml(p.label)}</td>
+        <td>${p.patterns.map(r => `<div class="pattern-regex">${escapeHtml(r)}</div>`).join('')}</td>
+        <td>${p.builtin ? '' : `<button class="pattern-delete" title="Delete" onclick="deletePattern('${p.id}')">✕</button>`}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ── Add pattern form ───────────────────────────────────────
+  const addSection = document.createElement('div');
+  addSection.className = 'add-pattern-section';
+  addSection.innerHTML = `
+    <span class="section-title">Add Custom Pattern</span>
+    <div class="form-grid" id="add-form-${admin.activeUnit}">
+      <div class="form-field">
+        <label class="form-label">Entity Type <span style="color:var(--danger)">*</span></label>
+        <input class="form-input" id="f-entity" placeholder="e.g. CONSTR_PROJECT_CODE" style="text-transform:uppercase"/>
+        <div class="form-hint">Uppercase letters, numbers, underscores</div>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Label <span style="color:var(--danger)">*</span></label>
+        <input class="form-input" id="f-label" placeholder="e.g. Project Code"/>
+      </div>
+      <div class="form-field span2">
+        <label class="form-label">Description</label>
+        <input class="form-input" id="f-desc" placeholder="What this identifier represents"/>
+      </div>
+      <div class="form-field span2">
+        <label class="form-label">Regex Patterns <span style="color:var(--danger)">*</span></label>
+        <div id="regex-inputs">
+          <div style="display:flex;gap:6px;margin-bottom:6px">
+            <input class="form-input regex-field" style="flex:1" placeholder="e.g. \\bPROJ-\\d{4}-[A-Z0-9]{4,8}\\b"/>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:12px" onclick="addRegexRow()">+</button>
+          </div>
+        </div>
+        <div class="form-hint">One regex per row. Use \\b for word boundaries.</div>
+      </div>
+      <div class="form-field span2">
+        <label class="form-label">Context Keywords</label>
+        <input class="form-input" id="f-context" placeholder="project code, proj id, project number (comma separated)"/>
+        <div class="form-hint">Words near the match that boost confidence</div>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Confidence Score</label>
+        <input class="form-input" id="f-score" type="number" min="0" max="1" step="0.05" value="0.80"/>
+      </div>
+    </div>
+    <div id="add-form-error" class="form-error" style="display:none"></div>
+    <div class="form-actions">
+      <button class="btn-primary" id="add-btn" onclick="submitPattern()">Add Pattern</button>
+      <button class="btn-secondary" onclick="clearAddForm()">Clear</button>
+    </div>
+  `;
+  body.appendChild(addSection);
+
+  // ── Test panel ─────────────────────────────────────────────
+  const testSection = document.createElement('div');
+  testSection.className = 'test-section';
+  testSection.innerHTML = `
+    <span class="section-title">Test Regex Patterns</span>
+    <div class="test-area">
+      <div class="form-field">
+        <label class="form-label">Regex to test</label>
+        <textarea class="form-textarea" id="t-regex" rows="3" placeholder="\\bPROJ-\\d{4}-[A-Z]{4}\\b"></textarea>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Sample text</label>
+        <textarea class="form-textarea" id="t-sample" rows="3" placeholder="Contract PROJ-2024-ABCD was signed…"></textarea>
+      </div>
+    </div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+      <button class="btn-secondary" style="font-size:11px;padding:5px 12px" onclick="runPatternTest()">Test</button>
+      <span id="t-result-label" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div class="test-results" id="t-results" style="margin-top:8px"></div>
+  `;
+  body.appendChild(testSection);
+}
+
+function addRegexRow() {
+  const container = document.getElementById('regex-inputs');
+  const div = document.createElement('div');
+  div.style.cssText = 'display:flex;gap:6px;margin-bottom:6px';
+  div.innerHTML = `
+    <input class="form-input regex-field" style="flex:1" placeholder="\\b[A-Z0-9]{4,}-\\d{4}\\b"/>
+    <button class="btn-secondary" style="padding:4px 10px;font-size:12px;color:var(--danger)" onclick="this.parentElement.remove()">✕</button>
+  `;
+  container.appendChild(div);
+}
+
+function clearAddForm() {
+  ['f-entity','f-label','f-desc','f-context'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  const score = document.getElementById('f-score');
+  if (score) score.value = '0.80';
+  const regexContainer = document.getElementById('regex-inputs');
+  if (regexContainer) {
+    regexContainer.innerHTML = `
+      <div style="display:flex;gap:6px;margin-bottom:6px">
+        <input class="form-input regex-field" style="flex:1" placeholder="e.g. \\bPROJ-\\d{4}-[A-Z0-9]{4,8}\\b"/>
+        <button class="btn-secondary" style="padding:4px 10px;font-size:12px" onclick="addRegexRow()">+</button>
+      </div>`;
+  }
+  const errEl = document.getElementById('add-form-error');
+  if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+}
+
+async function submitPattern() {
+  const entityType = document.getElementById('f-entity')?.value.trim().toUpperCase();
+  const label      = document.getElementById('f-label')?.value.trim();
+  const desc       = document.getElementById('f-desc')?.value.trim() || '';
+  const contextRaw = document.getElementById('f-context')?.value.trim();
+  const score      = parseFloat(document.getElementById('f-score')?.value || '0.8');
+  const regexFields = document.querySelectorAll('.regex-field');
+  const patterns   = [...regexFields].map(f => f.value.trim()).filter(Boolean);
+
+  const errEl = document.getElementById('add-form-error');
+
+  if (!entityType || !/^[A-Z][A-Z0-9_]+$/.test(entityType)) {
+    errEl.textContent = 'Entity type must be uppercase letters, numbers, underscores (e.g. MY_CUSTOM_ID)';
+    errEl.style.display = 'block'; return;
+  }
+  if (!label) { errEl.textContent = 'Label is required'; errEl.style.display = 'block'; return; }
+  if (!patterns.length) { errEl.textContent = 'At least one regex pattern is required'; errEl.style.display = 'block'; return; }
+  errEl.style.display = 'none';
+
+  const context = contextRaw ? contextRaw.split(',').map(s => s.trim()).filter(Boolean) : [];
+
+  const btn = document.getElementById('add-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  try {
+    const res = await fetch(`${API}/patterns`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        entity_type: entityType,
+        label, description: desc,
+        unit: admin.activeUnit,
+        patterns, context, score,
+      }),
+    });
+    if (!res.ok) {
+      const e = await res.json();
+      errEl.textContent = e.detail || 'Failed to save pattern';
+      errEl.style.display = 'block'; return;
+    }
+    clearAddForm();
+    await refreshAdmin();
+    // Also refresh entity chips on upload screen
+    try {
+      const entRes = await fetch(`${API}/entities`);
+      if (entRes.ok) {
+        const entData = await entRes.json();
+        state.allEntities = entData.entities;
+        renderEntityChips();
+      }
+    } catch {}
+  } catch (err) {
+    errEl.textContent = 'Network error: ' + err.message;
+    errEl.style.display = 'block';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Add Pattern';
+  }
+}
+
+async function deletePattern(patternId) {
+  if (!confirm('Delete this custom pattern? This cannot be undone.')) return;
+  try {
+    const res = await fetch(`${API}/patterns/${patternId}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const e = await res.json();
+      alert('Delete failed: ' + (e.detail || res.status)); return;
+    }
+    await refreshAdmin();
+    // Refresh entity chips
+    try {
+      const entRes = await fetch(`${API}/entities`);
+      if (entRes.ok) {
+        const entData = await entRes.json();
+        state.allEntities = entData.entities;
+        renderEntityChips();
+      }
+    } catch {}
+  } catch (err) {
+    alert('Network error: ' + err.message);
+  }
+}
+
+async function runPatternTest() {
+  const regex  = document.getElementById('t-regex')?.value.trim();
+  const sample = document.getElementById('t-sample')?.value.trim();
+  const results = document.getElementById('t-results');
+  const label  = document.getElementById('t-result-label');
+  if (!regex || !sample) { label.textContent = 'Enter a regex and sample text'; return; }
+
+  label.textContent = 'Testing…';
+  results.innerHTML = '';
+  try {
+    const res = await fetch(`${API}/patterns/test`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ patterns: [regex], sample_text: sample }),
+    });
+    if (!res.ok) {
+      const e = await res.json();
+      label.textContent = 'Error: ' + (e.detail || res.status);
+      label.style.color = 'var(--danger)'; return;
+    }
+    const data = await res.json();
+    label.textContent = `${data.match_count} match${data.match_count !== 1 ? 'es' : ''}`;
+    label.style.color = data.match_count > 0 ? 'var(--accent)' : 'var(--muted)';
+    if (data.matches.length) {
+      data.matches.forEach(m => {
+        const div = document.createElement('div');
+        div.className = 'test-match';
+        div.innerHTML = `<span>${escapeHtml(m.match)}</span><span class="test-match-pos">pos ${m.start}–${m.end}</span>`;
+        results.appendChild(div);
+      });
+    } else {
+      results.innerHTML = '<div class="test-no-match">No matches found</div>';
+    }
+  } catch (err) {
+    label.textContent = 'Error: ' + err.message;
+    label.style.color = 'var(--danger)';
+  }
+}
+
+init();
+</script>
+</body>
+</html>

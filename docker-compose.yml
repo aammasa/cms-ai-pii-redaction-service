@@ -1,0 +1,61 @@
+version: "3.9"
+
+# ── PII Redaction & Summarization — dual-process deployment ───────────────────
+#
+# Services
+# --------
+# rest-api   — FastAPI REST service  (port 8000)
+#              Serves browser UI, direct REST integrations
+#
+# mcp-server — MCP over SSE service  (port 8001)
+#              Serves AI agents (Claude, Copilot, Trimble internal tools)
+#
+# Both services share the same Docker image and .env file.
+# Business logic lives in src/ and is imported by both processes.
+#
+# Usage
+# -----
+# docker compose up                   # start both
+# docker compose up rest-api          # REST only
+# docker compose up mcp-server        # MCP only
+# docker compose up --scale mcp-server=3  # scale MCP independently
+
+services:
+
+  rest-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn src.api:api --host 0.0.0.0 --port 8000 --workers 4
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data          # persist custom patterns
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: uvicorn mcp_main:app --host 0.0.0.0 --port 8001 --workers 4
+    ports:
+      - "8001:8001"
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data          # same data volume — shared custom patterns
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    # Scale independently:
+    # docker compose up --scale mcp-server=3
