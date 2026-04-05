@@ -62,4 +62,4 @@ api.include_router(patterns.router)
 
 from mcp_server.server import create_app as _create_mcp_app  # noqa: E402
 
-api.mount("/mcp", _create_mcp_app(root_path="/mcp"))
+api.mount("/mcp", _create_mcp_app())
