@@ -64,7 +64,7 @@ async def health(request: Request) -> JSONResponse:
 
 # ── ASGI app ───────────────────────────────────────────────────────────────────
 
-def create_app() -> Starlette:
+def create_app(root_path: str = "") -> Starlette:
     sse_starlette = mcp.sse_app()
 
     return Starlette(
@@ -75,6 +75,7 @@ def create_app() -> Starlette:
         middleware=[
             Middleware(MCPAPIKeyMiddleware),
         ],
+        root_path=root_path,
     )
 
 

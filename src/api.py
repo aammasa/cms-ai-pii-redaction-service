@@ -56,10 +56,10 @@ api.include_router(summarization.router)
 api.include_router(patterns.router)
 
 # ── MCP SSE server — mounted at /mcp ──────────────────────────────────────────
-# Endpoints:  GET /mcp/sse   (SSE stream)
-#             POST /mcp/messages/  (tool calls)
+# Endpoints:  GET /mcp/sse          (SSE stream)
+#             POST /mcp/messages/   (tool calls)
 #             GET /mcp/health
 
-from mcp_server.server import app as _mcp_app  # noqa: E402
+from mcp_server.server import create_app as _create_mcp_app  # noqa: E402
 
-api.mount("/mcp", _mcp_app)
+api.mount("/mcp", _create_mcp_app(root_path="/mcp"))
