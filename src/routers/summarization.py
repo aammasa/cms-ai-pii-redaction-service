@@ -5,6 +5,7 @@ import os
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse
+from starlette.responses import Response
 
 from ..constants import DEFAULT_API_KEY_HEADER, ENV_API_KEY_HEADER, LLM_MODEL
 from ..models import SummarizeRequest, SummarizeResponse
@@ -32,7 +33,7 @@ def _api_key(request: Request) -> str:
 
 @router.post("/summarize", response_model=SummarizeResponse)
 @limiter.limit(LIMIT_SUMMARIZE)
-def summarize(req: SummarizeRequest, request: Request) -> JSONResponse:
+def summarize(req: SummarizeRequest, request: Request, response: Response) -> JSONResponse:
     """
     Summarize PII-free text via Claude.
 

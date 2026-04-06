@@ -5,6 +5,7 @@ import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
+from starlette.responses import Response
 
 from ..models import ProcessResponse, RedactRequest, RedactResponse
 from ..redaction.extractor import extract_text
@@ -26,7 +27,7 @@ def _client_ip(request: Request) -> str:
 
 @router.post("/redact", response_model=RedactResponse)
 @limiter.limit(LIMIT_GENERAL)
-def redact(req: RedactRequest, request: Request) -> RedactResponse:
+def redact(req: RedactRequest, request: Request, response: Response) -> RedactResponse:
     """Redact PII from raw text. Raises RedactionError on failure (handled globally)."""
     result = redact_text(
         text=req.text,
@@ -56,6 +57,7 @@ def redact(req: RedactRequest, request: Request) -> RedactResponse:
 @limiter.limit(LIMIT_PROCESS)
 async def process_file(
     request: Request,
+    response: Response,
     file: UploadFile = File(...),
     language: str = "auto",
     session_id: Optional[str] = None,
