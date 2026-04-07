@@ -65,14 +65,3 @@ jobs:
           app-name: 'cms-pii-redaction-dev'
           slot-name: 'Production'
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_09F58CF133F641AE81D3153285CD194A }}
-          app-settings-json: |
-            [
-              {"name": "ANTHROPIC_API_KEY",      "value": "${{ secrets.ANTHROPIC_API_KEY }}",      "slotSetting": false},
-              {"name": "AZURE_OPENAI_ENDPOINT",  "value": "${{ secrets.AZURE_OPENAI_ENDPOINT }}",  "slotSetting": false},
-              {"name": "AZURE_OPENAI_API_KEY",   "value": "${{ secrets.AZURE_OPENAI_API_KEY }}",   "slotSetting": false},
-              {"name": "AZURE_OPENAI_DEPLOYMENT","value": "${{ secrets.AZURE_OPENAI_DEPLOYMENT }}", "slotSetting": false},
-              {"name": "MCP_SSE_URL",            "value": "${{ secrets.MCP_SSE_URL }}",            "slotSetting": false},
-              {"name": "AZURE_LOG_WORKSPACE_ID", "value": "${{ secrets.AZURE_LOG_WORKSPACE_ID }}", "slotSetting": false},
-              {"name": "AZURE_LOG_WORKSPACE_KEY","value": "${{ secrets.AZURE_LOG_WORKSPACE_KEY }}", "slotSetting": false},
-              {"name": "AZURE_LOG_TYPE",         "value": "${{ secrets.AZURE_LOG_TYPE }}",         "slotSetting": false}
-            ]
