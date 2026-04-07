@@ -1,5 +1,9 @@
 """FastAPI application initialisation and router registration."""
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -12,7 +16,7 @@ from .errors.exception_handlers import (
     summarization_error_handler,
 )
 from .errors.exceptions import ExtractionError, RedactionError, SummarizationError
-from .routers import health, patterns, redaction, summarization
+from .routers import chat, health, patterns, redaction, summarization
 from .util.logging_config import configure_logging
 from .util.rate_limit import limiter
 
@@ -54,6 +58,7 @@ api.include_router(health.router)
 api.include_router(redaction.router)
 api.include_router(summarization.router)
 api.include_router(patterns.router)
+api.include_router(chat.router)
 
 # ── MCP SSE server — mounted at /mcp ──────────────────────────────────────────
 # Endpoints:  GET /mcp/sse          (SSE stream)

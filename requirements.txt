@@ -26,6 +26,9 @@ python-docx==1.1.2
 # ── Summarization (optional — falls back to extractive if not set) ────────────
 anthropic==0.51.0
 
+# ── AI chat (Azure OpenAI) ────────────────────────────────────────────────────
+openai>=1.30.0
+
 # ── MCP server (Option 2 — SSE transport, separate process) ──────────────────
 mcp[cli]==1.27.0
 

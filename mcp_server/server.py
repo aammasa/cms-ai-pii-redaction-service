@@ -67,11 +67,13 @@ async def health(request: Request) -> JSONResponse:
 # ── ASGI app ───────────────────────────────────────────────────────────────────
 
 def create_app() -> Starlette:
-    sse_starlette = mcp.sse_app()
+    sse_starlette  = mcp.sse_app()
+    http_starlette = mcp.streamable_http_app()
 
     return Starlette(
         routes=[
             Route("/health", health, methods=["GET"]),
+            Mount("/http", app=http_starlette),
             Mount("/", app=sse_starlette),
         ],
         middleware=[
